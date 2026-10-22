@@ -1,0 +1,46 @@
+# Avatar Discord dello staff per la pagina "Chi siamo".
+# Ogni 15 minuti legge gli avatar col bot (secret DISCORD_BOT_TOKEN) e scrive staff.json sul branch "avatars",
+# che il sito legge da raw.githubusercontent.com. Gli ID devono essere gli stessi di STAFF in src/data/server.js.
+name: Avatar staff
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  STAFF_IDS: >-
+    338073639557660672
+    740952036287185041
+    395660859998994435
+    574506193045946370
+    599961295306883095
+
+jobs:
+  avatars:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Leggi gli avatar da Discord
+        env:
+          TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: |
+          echo '{}' > staff.json
+          for id in $STAFF_IDS; do
+            hash=$(curl -sf -H "Authorization: Bot $TOKEN" "https://discord.com/api/v10/users/$id" | jq -r '.avatar // empty') || continue
+            [ -n "$hash" ] && jq --arg id "$id" --arg h "$hash" '.[$id] = $h' staff.json > tmp.json && mv tmp.json staff.json
+          done
+          cat staff.json
+
+      - name: Pubblica sul branch avatars
+        run: |
+          git clone -q --depth 1 --branch avatars "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" out \
+            || { git init -q -b avatars out && git -C out remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"; }
+          cp staff.json out/staff.json
+          cd out
+          git add staff.json
+          git diff --cached --quiet && { echo "Nessun cambio"; exit 0; }
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "Avatar staff aggiornati"
+          git push -q origin avatars
